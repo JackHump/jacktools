@@ -1,0 +1,207 @@
+#! /bin/bash
+#set -x
+if [  -z $1 ];then
+	echo "
+jacktools
+=========
+
+-slop: add coordinates either side of a bed feature
+-getfaster: a convenient wrapper for BedTools getfasta
+-csv2bed: convert a DEXSeq csv to a bed file
+"
+	exit;fi
+
+
+
+############
+### SLOP ###
+############
+
+if [[ "$1" == "slop" ]];then
+	if [[ -z $2 ]]; then exit;fi
+	if [[ "$2" == "--help" ]];then
+	echo "
+jacktools
+=========
+
+slop
+
+adapted from BedTools
+
+Summary: Add requested base pairs of "slop" to each feature.
+
+Usage:   jacktools slop [OPTIONS] <bed> <int>
+Options:
+	--help	Display this text. Useful, huh?
+	 
+"
+	exit;fi
+
+bed=$2
+n=$3
+
+
+awk -v n=$n 'BEGIN{OFS="\t"}{print $1,$2-n,$3+n,$4,$5,$6,$7,$8}' $bed
+
+fi
+
+
+#################
+### GETFASTER ###
+#################
+
+if [[ "$1" == "getfaster" ]];then
+        if [[ -z $2 ]]; then exit;fi
+        	if [[ "$2" == "--help" ]];then
+        		echo "
+jacktools
+=========
+
+getfaster
+
+adapted from BedTools getfasta
+
+Summary: from a given bed file, output the sequence of your chosen species.
+
+Usage:   jacktools getfaster <bed> <species> <-name> <output file> 
+	
+Options:
+        --help  Display this text. Useful, huh?
+	-name	Output a FASTA file where the sequence name corresponds to the name field of the bed file
+		Default is to just use the sequence coordinates
+         
+"
+			exit;fi
+
+bed=$2
+species=$3
+
+if [[ "$species" == "human" ]];then
+	genome=/cluster/scratch3/vyp-scratch2/reference_datasets/human_reference_sequence/hg19_UCSC.fa
+elif [[ "$species" == "mouse" ]];then
+	genome=/cluster/scratch3/vyp-scratch2/reference_datasets/RNASeq/Mouse/mm10.fa
+#	genome=/cluster/scratch3/vyp-scratch2/reference_datasets/mouse_reference_sequence/NCBI/GRCm38/Sequence/WholeGenomeFasta/genome.fa
+fi
+
+if [[ "$4" == "-name" ]];then
+	name="-name"
+	output=$5
+else
+	name=""
+	output=$4
+fi
+
+
+
+bedtools getfasta -fi $genome -bed $bed $name -fo $output -s
+
+fi
+
+
+#############
+## CSV2BED ##
+#############
+
+
+if [[ "$1" == "csv2bed" ]];then 
+	if [[ -z $2 ]]; then exit;fi
+                if [[ "$2" == "--help" ]];then
+                        echo "
+jacktools
+=========
+
+csv2bed
+
+converts a DEXSeq csv results file to a nice bed file
+
+feel free to pipe the output to awk!
+
+Usage:	jacktools csv2bed <csv> <OPTIONS>
+
+Options:
+	Default behaviour is to output every exon.
+
+	--cryptic	only print out cryptic exons
+	--annotated	only print out annotated exons
+	--all		print out all exons
+	-q <int>	specify FDR cut off. Default is 0.01
+"
+
+			exit;fi
+csv=$2
+if [[ $4 == "" ]];then
+	FDR=0.01
+else
+	if [[ "$4" == "-q" ]];then
+		FDR=$5
+	elif [[ "$4" != "-q" ]];then
+		FDR=0.01
+	fi
+fi
+
+if [[ "$3" == "--cryptic" ]];then
+	cat $csv | 
+	tr "," "\t" |
+	 tr -d \" | 
+	awk -v FDR=$FDR 'BEGIN{OFS="\t"}NR>1 && $3~/i/ && $9 < FDR {print $10,$11,$12,$1,$3,$13,$5,$9}'
+elif [[ "$3" == "--annotated" ]];then
+cat $csv |
+	 tr "," "\t" |
+	 tr -d \" |
+	 awk -v FDR=$FDR 'BEGIN{OFS="\t"}NR>1 && $3!~/i/i  && $9 < FDR{print $10,$11,$12,$1,$3,$13,$5,$9}'
+elif [[ "$3" == "" ]];then
+	cat $csv | 
+	tr "," "\t" |
+	tr -d \" |
+	awk -v FDR=$FDR 'BEGIN{OFS="\t"} NR>1 && $9 < FDR {print $10,$11,$12,$1,$3,$13,$5,$9}'
+fi
+fi
+
+###############
+## BAM_MERGE ##
+###############
+
+if [[ "$1" == "bam_merge" ]];then
+        if [[ -z $2 ]]; then
+	echo "no conditions present"
+	exit;fi
+                if [[ "$2" == "--help" ]];then
+                        echo "
+jacktools
+=========
+
+bam_merge
+
+merge bams by condition
+your current working directory must be /processed/
+each condition is a text file with a list of sample names
+eg Controls
+Control_1
+Control_2
+Control_3
+where inside /Control_1/ is Control_1_unique.bam
+
+Usage:  jacktools bam_merge <condition 1> <condition 2> ... <condition n>
+
+Options:
+	in progress
+"
+
+                        exit;fi
+
+
+for condition in $*;do
+	if [[ "$condition" != "bam_merge" ]];then
+        	#merge each bam in the same condition
+        	bam_list=`cat $condition | awk 'BEGIN{ORS="\t";print}{print $1"/"$1"_unique.bam"}' `
+        	echo $bam_list
+		samtools merge -rf ${condition}.merge.bam $bam_list
+        	samtools index ${condition}.merge.bam
+	fi
+done
+
+
+
+
+
+fi
